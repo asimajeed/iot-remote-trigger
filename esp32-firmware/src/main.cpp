@@ -9,7 +9,7 @@ extern const char device_cert[] asm("_binary_certs_device_cert_pem_start");
 extern const char device_key[] asm("_binary_certs_device_key_pem_start");
 
 WiFiClientSecure wifiClient;
-PubSubClient mqttClient(wifiClient);
+PubSubClient mqttClient(AWS_IOT_ENDPOINT, AWS_IOT_PORT, wifiClient);
 
 WiFiManager wm;
 
@@ -55,57 +55,57 @@ void setupWiFi() {
 // ------------------------------
 // MQTT
 // ------------------------------
-void publishStatus(const char* message) {
+void publishStatus(const char *message) {
   mqttClient.publish(MQTT_STATUS_TOPIC, message, true);
   Serial.printf("Published status: %s\n", message);
 }
 
-void publishAck(const char* message) {
+void publishAck(const char *message) {
   mqttClient.publish(MQTT_ACK_TOPIC, message);
   Serial.printf("Published ack: %s\n", message);
 }
 
-void handleCommand(const char* payload, unsigned int length) {
+void handleCommand(const char *payload, unsigned int length) {
   StaticJsonDocument<256> doc;
   DeserializationError error = deserializeJson(doc, payload, length);
-  
+
   if (error) {
     Serial.println("JSON parse error");
     publishAck("{\"status\":\"invalid_command\"}");
     return;
   }
-  
-  const char* cmd = doc["cmd"];
+
+  const char *cmd = doc["cmd"];
   uint32_t duration = doc["duration"] | 200;
-  
+
   if (cmd && strcmp(cmd, "power") == 0) {
     togglePowerButton(duration);
     publishAck("{\"status\":\"executed\"}");
-  } else {
+  }
+  else {
     publishAck("{\"status\":\"invalid_command\"}");
   }
 }
 
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
+void mqttCallback(char *topic, byte *payload, unsigned int length) {
   Serial.printf("Message on %s: ", topic);
   Serial.write(payload, length);
   Serial.println();
-  
+
   if (strcmp(topic, MQTT_CMD_TOPIC) == 0) {
-    handleCommand((const char*)payload, length);
+    handleCommand((const char *)payload, length);
   }
 }
 
 void connectMQTT() {
   while (!mqttClient.connected()) {
     Serial.print("Connecting to AWS IoT...");
-    
-    String lwt = "{\"status\":\"offline\"}";
-    if (mqttClient.connect(THING_NAME, NULL, NULL, MQTT_STATUS_TOPIC, 1, true, lwt.c_str())) {
+
+    if (mqttClient.connect(THING_NAME)) {
       Serial.println("connected");
       mqttClient.subscribe(MQTT_CMD_TOPIC, 1);
-      publishStatus("{\"status\":\"online\"}");
-    } else {
+    }
+    else {
       Serial.printf("failed, rc=%d, retrying in 5s\n", mqttClient.state());
       delay(5000);
     }
@@ -115,11 +115,12 @@ void setupMQTT() {
   wifiClient.setCACert(root_ca);
   wifiClient.setCertificate(device_cert);
   wifiClient.setPrivateKey(device_key);
-  
+
   mqttClient.setServer(AWS_IOT_ENDPOINT, AWS_IOT_PORT);
+  mqttClient.setKeepAlive(30);
   mqttClient.setCallback(mqttCallback);
-  mqttClient.setBufferSize(512);
-  
+  mqttClient.setBufferSize(1024);
+
   connectMQTT();
 }
 
@@ -140,14 +141,14 @@ void setup() {
 }
 
 void loop() {
-  if (!mqttClient.connected()) {
-    connectMQTT();
+  if (mqttClient.loop()) {
+    if (millis() - lastHeartbeat > HEARTBEAT_INTERVAL) {
+      publishStatus("{\"status\":\"heartbeat\"}");
+      lastHeartbeat = millis();
+    }
   }
-
-  mqttClient.loop();
-  
-  if (millis() - lastHeartbeat > HEARTBEAT_INTERVAL) {
-    publishStatus("{\"status\":\"heartbeat\"}");
-    lastHeartbeat = millis();
+  else {
+    connectMQTT();
+    publishStatus("{\"status\":\"online\"}");
   }
 }
