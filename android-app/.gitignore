@@ -50,3 +50,5 @@ proguard/
 
 # Windows specific files
 Thumbs.db
+
+*AwsIotConfig.kt
