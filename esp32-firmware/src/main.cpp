@@ -79,9 +79,17 @@ void handleCommand(const char *payload, unsigned int length) {
   const char *cmd = doc["cmd"];
   uint32_t duration = doc["duration"] | 200;
 
-  if (cmd && strcmp(cmd, "power") == 0) {
+  if (cmd && strcmp(cmd, "quick") == 0) {
     togglePowerButton(duration);
     publishAck("{\"status\":\"executed\"}");
+  }
+  else if (cmd && strcmp(cmd, "press") == 0) {
+    digitalWrite(POWER_BUTTON_GPIO, HIGH);
+    publishAck("{\"status\":\"pressed\"}");
+  }
+  else if (cmd && strcmp(cmd, "release") == 0) {
+    digitalWrite(POWER_BUTTON_GPIO, LOW);
+    publishAck("{\"status\":\"released\"}");
   }
   else {
     publishAck("{\"status\":\"invalid_command\"}");
@@ -100,35 +108,34 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 
 void connectMQTT() {
   int retries = 0;
+  String lwt = "{\"status\":\"offline\"}";
   while (!mqttClient.connected() && retries < 3) {
     Serial.print("Connecting to AWS IoT...");
 
-    if (mqttClient.connect(THING_NAME)) {
+    if (mqttClient.connect(
+      THING_NAME,
+      NULL,
+      NULL,
+      MQTT_STATUS_TOPIC,
+      1,
+      true,
+      lwt.c_str())) {
+
       Serial.println("connected");
+
       mqttClient.subscribe(MQTT_CMD_TOPIC, 1);
       Serial.println("Subscribed to command topic");
 
-      for (int i = 0; i < 10; i++) {
-        mqttClient.loop();
-        delay(100);
-      }
-      if (firstConnection) {
-        publishStatus("{\"status\":\"online\"}");
-        firstConnection = false;
-      }
+      publishStatus("{\"status\":\"online\"}");
       return;
     }
-    else {
-      retries++;
-      Serial.printf("failed, rc=%d, retry %d/3 in 5s\n", mqttClient.state(), retries);
-      delay(5000);
-    }
-  }
 
-  if (!mqttClient.connected()) {
-    Serial.println("MQTT connection failed after 3 retries");
+    retries++;
+    Serial.printf("failed, rc=%d retry %d/3\n", mqttClient.state(), retries);
+    delay(5000);
   }
 }
+
 
 void setupMQTT() {
   wifiClient.setCACert(root_ca);
@@ -138,7 +145,7 @@ void setupMQTT() {
   mqttClient.setServer(AWS_IOT_ENDPOINT, AWS_IOT_PORT);
   mqttClient.setKeepAlive(30);
   mqttClient.setCallback(mqttCallback);
-  mqttClient.setBufferSize(1024);
+  mqttClient.setBufferSize(512);
 
   connectMQTT();
 }
@@ -162,24 +169,13 @@ void setup() {
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi disconnected! Restarting...");
-    delay(1000);
     ESP.restart();
   }
 
   if (!mqttClient.connected()) {
     Serial.println("MQTT disconnected, reconnecting...");
     connectMQTT();
-    delay(2000);
   }
 
   mqttClient.loop();
-
-  if (mqttClient.connected() && millis() - lastHeartbeat > HEARTBEAT_INTERVAL) {
-    if (mqttClient.connected() && (millis() - lastHeartbeat >= HEARTBEAT_INTERVAL)) {
-      Serial.printf("Sending heartbeat (Free heap: %d)\n", ESP.getFreeHeap());
-      publishStatus("{\"status\":\"heartbeat\"}");
-      lastHeartbeat = millis();
-    }
-  }
-  delay(100);
 }

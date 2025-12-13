@@ -11,6 +11,4 @@
 
 #define POWER_BUTTON_GPIO 23
 
-#define HEARTBEAT_INTERVAL 60000
-
 #endif
