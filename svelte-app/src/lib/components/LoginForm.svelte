@@ -1,24 +1,27 @@
 <script lang="ts">
-  import { signIn } from '@auth/sveltekit/client';
   import * as Card from '$lib/components/ui/card';
-  import { Input } from '$lib/components/ui/input';
   import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
-  import { Home, Mail, Lock } from '@lucide/svelte';
+  import { signIn } from '@auth/sveltekit/client';
+  import { invalidate } from '$app/navigation';
 
   interface Props {
     onSuccess: () => void;
+    showRegister?: boolean;
   }
 
-  let { onSuccess }: Props = $props();
+  let { onSuccess, showRegister = false }: Props = $props();
 
   let email = $state('');
   let password = $state('');
-  let error = $state('');
+  let name = $state('');
   let isLoading = $state(false);
+  let error = $state('');
+  // svelte-ignore state_referenced_locally
+    let mode = $state<'login' | 'register'>(showRegister ? 'register' : 'login');
 
-  async function handleSubmit(e: SubmitEvent) {
-    e.preventDefault();
+  async function handleLogin() {
     isLoading = true;
     error = '';
 
@@ -30,68 +33,117 @@
       });
 
       if (result?.error) {
-        error = 'Invalid credentials';
-      } else if (result?.ok) {
+        error = 'Invalid email or password';
+      } else {
+        await invalidate('auth:session');
         onSuccess();
       }
-    } catch {
-      error = 'Connection error';
+    } catch (err) {
+      error = 'Login failed. Please try again.';
+    } finally {
+      isLoading = false;
     }
+  }
 
-    isLoading = false;
+  async function handleRegister() {
+    isLoading = true;
+    error = '';
+
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        error = data.error || 'Registration failed';
+        return;
+      }
+
+      // Auto-login after registration
+      await handleLogin();
+    } catch (err) {
+      error = 'Registration failed. Please try again.';
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  function handleSubmit(e: Event) {
+    e.preventDefault();
+    if (mode === 'login') {
+      handleLogin();
+    } else {
+      handleRegister();
+    }
   }
 </script>
 
 <div class="flex min-h-screen items-center justify-center p-4">
-  <Card.Root class="w-full max-w-sm">
+  <Card.Root class="w-full max-w-md">
     <Card.Header class="text-center">
-      <div
-        class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10"
-      >
-        <Home class="h-8 w-8 text-primary" />
-      </div>
-      <Card.Title class="text-2xl">House Control</Card.Title>
-      <Card.Description>Sign in to access your devices</Card.Description>
+      <Card.Title class="text-2xl font-bold">
+        {mode === 'login' ? 'Welcome Back' : 'Create Account'}
+      </Card.Title>
+      <Card.Description>
+        {mode === 'login'
+          ? 'Sign in to control your devices'
+          : 'Register to start managing your smart home'}
+      </Card.Description>
     </Card.Header>
+
     <Card.Content>
       <form onsubmit={handleSubmit} class="space-y-4">
+        {#if mode === 'register'}
+          <div class="space-y-2">
+            <Label for="name">Name</Label>
+            <Input id="name" bind:value={name} placeholder="John Doe" required />
+          </div>
+        {/if}
+
         <div class="space-y-2">
           <Label for="email">Email</Label>
-          <div class="relative">
-            <Mail class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="email"
-              type="email"
-              placeholder="your@email.com"
-              bind:value={email}
-              class="pl-10"
-              autocomplete="email"
-              required
-            />
-          </div>
+          <Input id="email" type="email" bind:value={email} placeholder="you@example.com" required />
         </div>
+
         <div class="space-y-2">
           <Label for="password">Password</Label>
-          <div class="relative">
-            <Lock class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id="password"
-              type="password"
-              placeholder="Enter password"
-              bind:value={password}
-              class="pl-10"
-              autocomplete="current-password"
-              required
-            />
-          </div>
+          <Input
+            id="password"
+            type="password"
+            bind:value={password}
+            placeholder="••••••••"
+            required
+          />
+          {#if mode === 'register'}
+            <p class="text-xs text-muted-foreground">Must be at least 8 characters</p>
+          {/if}
         </div>
+
         {#if error}
-          <p class="text-center text-sm text-destructive">{error}</p>
+          <p class="text-sm text-destructive">{error}</p>
         {/if}
+
         <Button type="submit" class="w-full" disabled={isLoading}>
-          {isLoading ? 'Signing in...' : 'Sign In'}
+          {isLoading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
         </Button>
       </form>
     </Card.Content>
+
+    <Card.Footer class="flex justify-center">
+      <button
+        type="button"
+        onclick={() => {
+          mode = mode === 'login' ? 'register' : 'login';
+          error = '';
+        }}
+        class="text-sm text-muted-foreground hover:text-primary"
+      >
+        {mode === 'login' ? "Don't have an account? Register" : 'Already have an account? Sign in'}
+      </button>
+    </Card.Footer>
   </Card.Root>
 </div>

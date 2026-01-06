@@ -1,153 +1,136 @@
 <script lang="ts">
-  import { page } from '$app/state';
-  import { signOut } from '@auth/sveltekit/client';
-  import PowerButtonCard from '$lib/components/PowerButtonCard.svelte';
-  import LoginForm from '$lib/components/LoginForm.svelte';
-  import { Button } from '$lib/components/ui/button';
-  import { LogOut, House, Moon, Sun } from '@lucide/svelte';
+	import { invalidate } from '$app/navigation';
+	import { page } from '$app/state';
+	import { signOut } from '@auth/sveltekit/client';
+	import DeviceGrid from '$lib/components/DeviceGrid.svelte';
+	import LoginForm from '$lib/components/LoginForm.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { LogOut, House, Moon, Sun } from '@lucide/svelte';
 
-  let session = $derived(page.data?.session);
+	let session = $derived(page.data?.session);
 
-  let theme = $state<'light' | 'dark'>(
-    typeof window !== 'undefined'
-      ? localStorage.getItem('darkMode') === 'true' ||
-        (!localStorage.getItem('darkMode') &&
-          window.matchMedia('(prefers-color-scheme: dark)').matches)
-        ? 'dark'
-        : 'light'
-      : 'dark'
-  );
+	let theme = $state<'light' | 'dark'>(
+		typeof window !== 'undefined'
+			? localStorage.getItem('darkMode') === 'true' ||
+				(!localStorage.getItem('darkMode') &&
+					window.matchMedia('(prefers-color-scheme: dark)').matches)
+				? 'dark'
+				: 'light'
+			: 'dark'
+	);
 
-  $effect(() => {
-    if (typeof document !== 'undefined') {
-      if (theme === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
-      localStorage.setItem('darkMode', theme === 'dark' ? 'true' : 'false');
-    }
-  });
+	$effect(() => {
+		if (typeof document !== 'undefined') {
+			if (theme === 'dark') {
+				document.documentElement.classList.add('dark');
+			} else {
+				document.documentElement.classList.remove('dark');
+			}
+			localStorage.setItem('darkMode', theme === 'dark' ? 'true' : 'false');
+		}
+	});
 
-  // Sync with system preference changes (if no manual override)
-  $effect(() => {
-    if (typeof window !== 'undefined') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const handler = (e: MediaQueryListEvent) => {
-        // Only auto-update if user hasn't manually set preference
-        if (!localStorage.getItem('darkMode')) {
-          theme = e.matches ? 'dark' : 'light';
-        }
-      };
-      mediaQuery.addEventListener('change', handler);
-      return () => mediaQuery.removeEventListener('change', handler);
-    }
-  });
+	$effect(() => {
+		if (typeof window !== 'undefined') {
+			const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+			const handler = (e: MediaQueryListEvent) => {
+				if (!localStorage.getItem('darkMode')) {
+					theme = e.matches ? 'dark' : 'light';
+				}
+			};
+			mediaQuery.addEventListener('change', handler);
+			return () => mediaQuery.removeEventListener('change', handler);
+		}
+	});
 
-  const toggleTheme = () => {
-    theme = theme === 'dark' ? 'light' : 'dark';
-  };
-  
-  async function handleQuick(duration: number) {
-    const response = await fetch('/api/mqtt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'quick', duration })
-    });
+	const toggleTheme = () => {
+		theme = theme === 'dark' ? 'light' : 'dark';
+	};
 
-    if (!response.ok) {
-      throw new Error('Failed to send command');
-    }
+	// State
+	let devices = $state<any[]>([]);
+	let isLoading = $state(true);
 
-    const data = await response.json();
-    return { ack: data.ack || 'unknown' };
-  }
+	// Load devices
+	async function loadDevices() {
+		if (!session) return;
 
-  async function handlePress() {
-    const response = await fetch('/api/mqtt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'press' })
-    });
+		isLoading = true;
+		console.log('Loading devices for user:', session.user);
+		try {
+			const devicesRes = await fetch('/api/devices');
+			console.log('Devices response status:', devicesRes.status);
+			if (devicesRes.ok) {
+				devices = await devicesRes.json();
+				console.log('Loaded devices:', devices);
+			} else {
+				const error = await devicesRes.text();
+				console.error('Failed to load devices:', error);
+			}
+		} catch (error) {
+			console.error('Failed to load devices:', error);
+		} finally {
+			isLoading = false;
+		}
+	}
 
-    if (!response.ok) {
-      throw new Error('Failed to press');
-    }
+	// Load data when session changes
+	$effect(() => {
+		if (session) {
+			loadDevices();
+		}
+	});
 
-    const data = await response.json();
-    return { ack: data.ack || 'unknown' };
-  }
+	async function handleLogout() {
+		await signOut({ redirect: false });
+		await invalidate('auth:session');
+		// Force reload to clear session state immediately
+		window.location.href = '/';
+	}
 
-  async function handleRelease() {
-    const response = await fetch('/api/mqtt', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'release' })
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to release');
-    }
-
-    const data = await response.json();
-    return { ack: data.ack || 'unknown' };
-  }
-
-  async function pollStatus() {
-    const response = await fetch('/api/mqtt');
-
-    if (!response.ok) {
-      throw new Error('Failed to poll status');
-    }
-
-    const data = await response.json();
-    return data;
-  }
-
-  async function handleLogout() {
-    await signOut({ callbackUrl: '/' });
-  }
-
-  function handleLoginSuccess() {
-    window.location.reload();
-  }
+	async function handleLoginSuccess() {
+		await invalidate('auth:session');
+	}
 </script>
 
 {#if !session}
-  <LoginForm onSuccess={handleLoginSuccess} />
+	<LoginForm onSuccess={handleLoginSuccess} />
 {:else}
-  <main class="min-h-screen p-4">
-    <!-- Header -->
-    <header class="mb-8 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <House class="h-6 w-6 text-primary" />
-        <h1 class="text-xl font-semibold">House Control</h1>
-      </div>
-      <div class="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onclick={toggleTheme}>
-          {#if theme === 'dark'}
-            <Sun class="h-4 w-4" />
-          {:else}
-            <Moon class="h-4 w-4" />
-          {/if}
-        </Button>
-        <Button variant="ghost" size="sm" onclick={handleLogout}>
-          <LogOut class="mr-2 h-4 w-4" />
-          Sign Out
-        </Button>
-      </div>
-    </header>
+	<main class="min-h-screen p-4">
+		<header class="mb-8">
+			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+				<!-- Left side: Title -->
+				<div class="flex items-center gap-2">
+					<House class="h-6 w-6 text-primary" />
+					<h1 class="text-xl font-semibold">House Control</h1>
+				</div>
 
-    <!-- Dashboard -->
-    <div class="mx-auto max-w-4xl">
-      <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <PowerButtonCard
-          onQuick={handleQuick}
-          onPress={handlePress}
-          onRelease={handleRelease}
-          {pollStatus}
-        />
-      </div>
-    </div>
-  </main>
+				<!-- Right side: Theme toggle and Sign Out -->
+				<div class="flex items-center gap-2">
+					<Button variant="ghost" size="icon" onclick={toggleTheme}>
+						{#if theme === 'dark'}
+							<Sun class="h-4 w-4" />
+						{:else}
+							<Moon class="h-4 w-4" />
+						{/if}
+					</Button>
+					<Button variant="ghost" size="sm" onclick={handleLogout}>
+						<LogOut class="mr-2 h-4 w-4" />
+						<span class="hidden sm:inline">Sign Out</span>
+						<span class="sm:hidden">Out</span>
+					</Button>
+				</div>
+			</div>
+		</header>
+
+		<div class="mx-auto max-w-7xl">
+			{#if isLoading}
+				<div class="flex h-[400px] items-center justify-center">
+					<p class="text-muted-foreground">Loading...</p>
+				</div>
+			{:else}
+				<DeviceGrid {devices} />
+			{/if}
+		</div>
+	</main>
 {/if}

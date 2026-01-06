@@ -1,24 +1,23 @@
 import { json, type RequestEvent } from '@sveltejs/kit';
 import mqtt from 'mqtt';
 import { getSignedIoTWebSocketUrl } from '$lib/aws-iot-signer';
+import { getDeviceById, canAccessDevice } from '$config/devices';
 import { env } from '$env/dynamic/private';
 
 // Store last acknowledgment (for POST)
 let lastAck: { status: string; timestamp: number } | null = null;
 
-async function createMqttClient(): Promise<mqtt.MqttClient> {
-  const endpoint = env.AWS_IOT_ENDPOINT;
-  const region = env.AWS_REGION || 'ap-southeast-1';
+async function createMqttClient(mqttConfig: any): Promise<mqtt.MqttClient> {
   const accessKey = env.AWS_ACCESS_KEY_ID;
   const secretKey = env.AWS_SECRET_ACCESS_KEY;
 
-  if (!endpoint || !accessKey || !secretKey || !region) {
-    throw new Error('Missing AWS configuration');
+  if (!accessKey || !secretKey) {
+    throw new Error('Missing AWS credentials');
   }
 
   const signedUrl = await getSignedIoTWebSocketUrl({
-    endpoint,
-    region,
+    endpoint: mqttConfig.endpoint,
+    region: mqttConfig.region,
     accessKeyId: accessKey,
     secretAccessKey: secretKey
   });
@@ -30,23 +29,40 @@ async function createMqttClient(): Promise<mqtt.MqttClient> {
   });
 }
 
-export async function POST({ request, locals }: RequestEvent) {
+export async function POST(event: RequestEvent) {
   let client: mqtt.MqttClient | null = null;
 
   try {
-    const session = await locals.auth?.();
-    if (!session?.user) {
+    const session = event.locals.session;
+    if (!session?.user?.id) {
       return json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { action, duration } = await request.json();
+    const userId = session.user.id;
+    const { deviceId, action, duration } = await event.request.json();
 
-    if (!['quick', 'press', 'release'].includes(action)) {
+    if (!deviceId) {
+      return json({ error: 'Device ID is required' }, { status: 400 });
+    }
+
+    if (!['quick', 'press', 'release', 'pulse'].includes(action)) {
       return json({ error: 'Invalid action' }, { status: 400 });
     }
 
+    // Check device access using userId
+    if (!canAccessDevice(userId, deviceId)) {
+      return json({ error: 'Access denied to this device' }, { status: 403 });
+    }
+
+    // Get device config
+    const device = getDeviceById(deviceId);
+
+    if (!device) {
+      return json({ error: 'Device not found' }, { status: 404 });
+    }
+
     // Create temporary client for this command only
-    client = await createMqttClient();
+    client = await createMqttClient(device.mqtt);
 
     // Wait for connection
     await new Promise<void>((resolve, reject) => {
@@ -62,7 +78,7 @@ export async function POST({ request, locals }: RequestEvent) {
     });
 
     // Subscribe to ack topic
-    const ackTopic = env.MQTT_ACK_TOPIC || 'home/pc/ack';
+    const ackTopic = device.mqtt.ackTopic;
     await new Promise<void>((resolve, reject) => {
       client!.subscribe(ackTopic, { qos: 1 }, (err) => {
         if (err) reject(err);
@@ -87,10 +103,10 @@ export async function POST({ request, locals }: RequestEvent) {
     });
 
     // Publish command
-    const cmdTopic = env.MQTT_CMD_TOPIC || 'home/pc/cmd';
+    const cmdTopic = device.mqtt.cmdTopic;
     const cmdPayload = JSON.stringify({
       cmd: action,
-      duration: duration || 200
+      duration: duration || device.pulseDurationMs || 200
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -130,17 +146,36 @@ export async function POST({ request, locals }: RequestEvent) {
 }
 
 // GET endpoint - reads retained LWT status
-export async function GET({ locals }: RequestEvent) {
+export async function GET(event: RequestEvent) {
   let client: mqtt.MqttClient | null = null;
 
   try {
-    const session = await locals.auth?.();
-    if (!session?.user) {
+    const session = event.locals.session;
+    if (!session?.user?.id) {
       return json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const userId = session.user.id;
+    const deviceId = event.url.searchParams.get('deviceId');
+
+    if (!deviceId) {
+      return json({ error: 'Device ID is required' }, { status: 400 });
+    }
+
+    // Check device access using userId
+    if (!canAccessDevice(userId, deviceId)) {
+      return json({ error: 'Access denied to this device' }, { status: 403 });
+    }
+
+    // Get device config
+    const device = getDeviceById(deviceId);
+
+    if (!device) {
+      return json({ error: 'Device not found' }, { status: 404 });
+    }
+
     // Create temporary client to read retained status
-    client = await createMqttClient();
+    client = await createMqttClient(device.mqtt);
 
     // Wait for connection
     await new Promise<void>((resolve, reject) => {
@@ -156,7 +191,14 @@ export async function GET({ locals }: RequestEvent) {
     });
 
     // Subscribe to status topic (will receive retained message)
-    const statusTopic = env.MQTT_STATUS_TOPIC || 'home/pc/status';
+    const statusTopic = device.mqtt.statusTopic;
+
+    if (!statusTopic) {
+      return json({
+        connected: true,
+        deviceStatus: 'unknown'
+      });
+    }
 
     const status = await new Promise<'online' | 'offline'>((resolve) => {
       const timeout = setTimeout(() => resolve('offline'), 2000);

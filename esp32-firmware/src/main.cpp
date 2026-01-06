@@ -79,7 +79,7 @@ void handleCommand(const char *payload, unsigned int length) {
   const char *cmd = doc["cmd"];
   uint32_t duration = doc["duration"] | 200;
 
-  if (cmd && strcmp(cmd, "quick") == 0) {
+  if (cmd && (strcmp(cmd, "pulse") == 0 || strcmp(cmd, "quick") == 0)) {
     togglePowerButton(duration);
     publishAck("{\"status\":\"executed\"}");
   }
