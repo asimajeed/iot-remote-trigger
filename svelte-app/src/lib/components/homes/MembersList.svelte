@@ -48,9 +48,12 @@
 
   function getRoleIcon(role: string) {
     switch (role) {
-      case 'owner': return Crown;
-      case 'admin': return Shield;
-      default: return User;
+      case 'owner':
+        return Crown;
+      case 'admin':
+        return Shield;
+      default:
+        return User;
     }
   }
 
@@ -65,9 +68,7 @@
     }
   }
 
-  const canRemoveMember = $derived(
-    currentUserRole === 'owner' || currentUserRole === 'admin'
-  );
+  const canRemoveMember = $derived(currentUserRole === 'owner' || currentUserRole === 'admin');
 </script>
 
 <div class="rounded-lg border bg-card p-6">
@@ -92,17 +93,23 @@
             <p class="text-sm text-muted-foreground">{member.user.email}</p>
             <div class="mt-1 flex items-center gap-2">
               {#if member.role === 'owner'}
-                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-primary/10 text-primary">
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                >
                   <Crown class="h-3 w-3" />
                   Owner
                 </span>
               {:else if member.role === 'admin'}
-                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400"
+                >
                   <Shield class="h-3 w-3" />
                   Admin
                 </span>
               {:else}
-                <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                >
                   <User class="h-3 w-3" />
                   Member
                 </span>
@@ -135,13 +142,16 @@
     <AlertDialog.Header>
       <AlertDialog.Title>Remove Member</AlertDialog.Title>
       <AlertDialog.Description>
-        Are you sure you want to remove {userToRemove?.user.name || userToRemove?.user.email} from this home?
-        They will immediately lose access to all devices.
+        Are you sure you want to remove {userToRemove?.user.name || userToRemove?.user.email} from this
+        home? They will immediately lose access to all devices.
       </AlertDialog.Description>
     </AlertDialog.Header>
     <AlertDialog.Footer>
       <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-      <AlertDialog.Action onclick={handleRemove} class="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+      <AlertDialog.Action
+        onclick={handleRemove}
+        class="text-destructive-foreground bg-destructive hover:bg-destructive/90"
+      >
         Remove Member
       </AlertDialog.Action>
     </AlertDialog.Footer>

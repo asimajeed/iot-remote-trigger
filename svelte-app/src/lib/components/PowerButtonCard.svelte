@@ -9,15 +9,23 @@
     onQuick: (duration: number) => Promise<{ ack: string }>;
     onPress: () => Promise<{ ack: string }>;
     onRelease: () => Promise<{ ack: string }>;
-    pollStatus: () => Promise<{ connected: boolean; deviceStatus: 'online' | 'offline' }>;
+    pollStatus: () => Promise<{ connected: boolean; deviceStatus: 'online' | 'offline' | 'unknown' }>;
+    initialStatus?: { connected: boolean; deviceStatus: 'online' | 'offline' | 'unknown' };
   }
 
-  let { onQuick, onPress, onRelease, pollStatus }: Props = $props();
+  let { onQuick, onPress, onRelease, pollStatus, initialStatus }: Props = $props();
 
   const LONG_PRESS_THRESHOLD = 500;
 
   let statusText = $state('Tap to power on/off PC');
-  let connectionState: ConnectionState = $state('disconnected');
+  
+  // Compute initial state from props
+  function getInitialConnectionState(): ConnectionState {
+    if (!initialStatus) return 'disconnected';
+    return initialStatus.deviceStatus === 'online' ? 'ready' : 'disconnected';
+  }
+  
+  let connectionState: ConnectionState = $state(getInitialConnectionState());
   let pressStart = $state(0);
   let isLongPress = $state(false);
   let longPressTimer: ReturnType<typeof setTimeout> | null = $state(null);
@@ -63,8 +71,10 @@
 
   let config = $derived(stateConfig[connectionState]);
 
-  // Poll status on mount and periodically
+  // Check status once on mount if no initial status provided
   $effect(() => {
+    if (initialStatus) return;
+
     const checkConnection = async () => {
       try {
         const status = await pollStatus();
@@ -79,8 +89,6 @@
     };
 
     checkConnection();
-    const interval = setInterval(checkConnection, 30000);
-    return () => clearInterval(interval);
   });
 
   function handlePressStart() {
@@ -103,9 +111,10 @@
       statusText = 'Holding button...';
       try {
         await onPress();
-      } catch {
+      } catch (error) {
         connectionState = 'error';
-        statusText = 'Failed to press';
+        const isNetworkError = error instanceof TypeError || (error as any)?.message?.includes('fetch');
+        statusText = isNetworkError ? 'No internet connection' : 'Failed to press';
       }
     }, LONG_PRESS_THRESHOLD);
   }
@@ -141,9 +150,10 @@
             statusText = 'Tap to power on/off PC';
           }, 3000);
         }
-      } catch {
+      } catch (error) {
         connectionState = 'error';
-        statusText = 'Failed to release';
+        const isNetworkError = error instanceof TypeError || (error as any)?.message?.includes('fetch');
+        statusText = isNetworkError ? 'No internet connection' : 'Failed to release';
         setTimeout(() => {
           connectionState = 'ready';
           statusText = 'Tap to power on/off PC';
@@ -175,9 +185,10 @@
             statusText = 'Tap to power on/off PC';
           }, 3000);
         }
-      } catch {
+      } catch (error) {
         connectionState = 'error';
-        statusText = 'Failed to send command';
+        const isNetworkError = error instanceof TypeError || (error as any)?.message?.includes('fetch');
+        statusText = isNetworkError ? 'No internet connection' : 'Failed to send command';
         setTimeout(() => {
           connectionState = 'ready';
           statusText = 'Tap to power on/off PC';

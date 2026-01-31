@@ -7,7 +7,7 @@ import { getDevicesForUser } from '$config/devices';
  */
 export async function GET(event: RequestEvent) {
   try {
-    const session = event.locals.session;
+    const session = await event.locals.auth?.();
     if (!session?.user?.id) {
       return json({ error: 'Unauthorized' }, { status: 401 });
     }

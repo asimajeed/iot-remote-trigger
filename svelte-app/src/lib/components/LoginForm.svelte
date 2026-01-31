@@ -4,14 +4,12 @@
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
   import { signIn } from '@auth/sveltekit/client';
-  import { invalidate } from '$app/navigation';
 
   interface Props {
-    onSuccess: () => void;
     showRegister?: boolean;
   }
 
-  let { onSuccess, showRegister = false }: Props = $props();
+  let { showRegister = false }: Props = $props();
 
   let email = $state('');
   let password = $state('');
@@ -19,9 +17,10 @@
   let isLoading = $state(false);
   let error = $state('');
   // svelte-ignore state_referenced_locally
-    let mode = $state<'login' | 'register'>(showRegister ? 'register' : 'login');
+  let mode = $state<'login' | 'register'>(showRegister ? 'register' : 'login');
 
-  async function handleLogin() {
+  async function handleLogin(e: Event) {
+    e.preventDefault();
     isLoading = true;
     error = '';
 
@@ -32,20 +31,25 @@
         redirect: false
       });
 
+      console.log('SignIn result:', result);
+
       if (result?.error) {
         error = 'Invalid email or password';
-      } else {
-        await invalidate('auth:session');
-        onSuccess();
+        isLoading = false;
+        return;
       }
+
+      // Success - do a full page reload to get fresh session
+      window.location.href = '/';
     } catch (err) {
+      console.error('Login error:', err);
       error = 'Login failed. Please try again.';
-    } finally {
       isLoading = false;
     }
   }
 
-  async function handleRegister() {
+  async function handleRegister(e: Event) {
+    e.preventDefault();
     isLoading = true;
     error = '';
 
@@ -63,21 +67,14 @@
         return;
       }
 
-      // Auto-login after registration
-      await handleLogin();
+      // After successful registration, switch to login mode
+      mode = 'login';
+      error = '';
+      password = ''; // Clear password for security
     } catch (err) {
       error = 'Registration failed. Please try again.';
     } finally {
       isLoading = false;
-    }
-  }
-
-  function handleSubmit(e: Event) {
-    e.preventDefault();
-    if (mode === 'login') {
-      handleLogin();
-    } else {
-      handleRegister();
     }
   }
 </script>
@@ -96,41 +93,83 @@
     </Card.Header>
 
     <Card.Content>
-      <form onsubmit={handleSubmit} class="space-y-4">
-        {#if mode === 'register'}
+      {#if mode === 'register'}
+        <!-- Registration form -->
+        <form onsubmit={handleRegister} class="space-y-4">
           <div class="space-y-2">
             <Label for="name">Name</Label>
-            <Input id="name" bind:value={name} placeholder="John Doe" required />
+            <Input id="name" name="name" bind:value={name} placeholder="John Doe" required />
           </div>
-        {/if}
 
-        <div class="space-y-2">
-          <Label for="email">Email</Label>
-          <Input id="email" type="email" bind:value={email} placeholder="you@example.com" required />
-        </div>
+          <div class="space-y-2">
+            <Label for="email">Email</Label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              bind:value={email}
+              placeholder="you@example.com"
+              required
+            />
+          </div>
 
-        <div class="space-y-2">
-          <Label for="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            bind:value={password}
-            placeholder="••••••••"
-            required
-          />
-          {#if mode === 'register'}
+          <div class="space-y-2">
+            <Label for="password">Password</Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              bind:value={password}
+              placeholder="••••••••"
+              required
+            />
             <p class="text-xs text-muted-foreground">Must be at least 8 characters</p>
+          </div>
+
+          {#if error}
+            <p class="text-sm text-destructive">{error}</p>
           {/if}
-        </div>
 
-        {#if error}
-          <p class="text-sm text-destructive">{error}</p>
-        {/if}
+          <Button type="submit" class="w-full" disabled={isLoading}>
+            {isLoading ? 'Please wait...' : 'Create Account'}
+          </Button>
+        </form>
+      {:else}
+        <!-- Login form -->
+        <form onsubmit={handleLogin} class="space-y-4">
+          <div class="space-y-2">
+            <Label for="email">Email</Label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              bind:value={email}
+              placeholder="you@example.com"
+              required
+            />
+          </div>
 
-        <Button type="submit" class="w-full" disabled={isLoading}>
-          {isLoading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
-        </Button>
-      </form>
+          <div class="space-y-2">
+            <Label for="password">Password</Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              bind:value={password}
+              placeholder="••••••••"
+              required
+            />
+          </div>
+
+          {#if error}
+            <p class="text-sm text-destructive">{error}</p>
+          {/if}
+
+          <Button type="submit" class="w-full" disabled={isLoading}>
+            {isLoading ? 'Please wait...' : 'Sign In'}
+          </Button>
+        </form>
+      {/if}
     </Card.Content>
 
     <Card.Footer class="flex justify-center">

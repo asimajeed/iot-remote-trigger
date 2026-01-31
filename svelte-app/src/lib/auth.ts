@@ -30,7 +30,6 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
         if (!isValid) {
           return null;
         }
-
         return {
           id: user.id,
           email: user.email,
@@ -39,9 +38,6 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
       }
     })
   ],
-  pages: {
-    signIn: '/'
-  },
   session: {
     strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60 // 30 days
@@ -66,9 +62,18 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
   },
   secret: env.AUTH_SECRET,
   trustHost: true,
+  cookies: {
+    sessionToken: {
+      name: 'authjs.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/'
+      }
+    }
+  },
   logger: {
     error(code: any) {
-      // Only log actual errors, not failed login attempts
       const errorName = code?.name || String(code);
       if (errorName !== 'CredentialsSignin') {
         console.error(code);

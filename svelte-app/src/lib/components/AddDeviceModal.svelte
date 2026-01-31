@@ -43,11 +43,11 @@
   ]);
 
   let locationValue = $state('private');
-  
+
   const locationTriggerContent = $derived(
     homeOptions.find((h) => h.value === locationValue)?.label ?? 'Select location'
   );
-  
+
   // Sync locationValue with homeId
   $effect(() => {
     homeId = locationValue === 'private' ? null : locationValue;

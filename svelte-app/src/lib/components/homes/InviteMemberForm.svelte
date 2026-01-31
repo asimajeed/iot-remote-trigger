@@ -66,7 +66,13 @@
     <h3 class="text-lg font-semibold">Invite Member</h3>
   </div>
 
-  <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="space-y-4">
+  <form
+    onsubmit={(e) => {
+      e.preventDefault();
+      handleSubmit();
+    }}
+    class="space-y-4"
+  >
     <div class="space-y-2">
       <Label for="email">Email Address</Label>
       <Input
@@ -76,9 +82,7 @@
         placeholder="friend@example.com"
         disabled={isSubmitting}
       />
-      <p class="text-xs text-muted-foreground">
-        User must have an account to be invited
-      </p>
+      <p class="text-xs text-muted-foreground">User must have an account to be invited</p>
     </div>
 
     <div class="space-y-2">

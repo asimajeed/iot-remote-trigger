@@ -1,39 +1,16 @@
 import { json, type RequestEvent } from '@sveltejs/kit';
 import mqtt from 'mqtt';
-import { getSignedIoTWebSocketUrl } from '$lib/aws-iot-signer';
 import { getDeviceById, canAccessDevice } from '$config/devices';
-import { env } from '$env/dynamic/private';
+import { createMqttClient } from '$lib';
 
 // Store last acknowledgment (for POST)
 let lastAck: { status: string; timestamp: number } | null = null;
-
-async function createMqttClient(mqttConfig: any): Promise<mqtt.MqttClient> {
-  const accessKey = env.AWS_ACCESS_KEY_ID;
-  const secretKey = env.AWS_SECRET_ACCESS_KEY;
-
-  if (!accessKey || !secretKey) {
-    throw new Error('Missing AWS credentials');
-  }
-
-  const signedUrl = await getSignedIoTWebSocketUrl({
-    endpoint: mqttConfig.endpoint,
-    region: mqttConfig.region,
-    accessKeyId: accessKey,
-    secretAccessKey: secretKey
-  });
-
-  return mqtt.connect(signedUrl, {
-    protocol: 'wss',
-    keepalive: 30,
-    reconnectPeriod: 0
-  });
-}
 
 export async function POST(event: RequestEvent) {
   let client: mqtt.MqttClient | null = null;
 
   try {
-    const session = event.locals.session;
+    const session = await event.locals.auth?.();
     if (!session?.user?.id) {
       return json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -150,7 +127,7 @@ export async function GET(event: RequestEvent) {
   let client: mqtt.MqttClient | null = null;
 
   try {
-    const session = event.locals.session;
+    const session = await event.locals.auth?.();
     if (!session?.user?.id) {
       return json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -173,7 +150,6 @@ export async function GET(event: RequestEvent) {
     if (!device) {
       return json({ error: 'Device not found' }, { status: 404 });
     }
-
     // Create temporary client to read retained status
     client = await createMqttClient(device.mqtt);
 
