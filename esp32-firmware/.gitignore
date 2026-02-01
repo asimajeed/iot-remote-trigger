@@ -3,3 +3,4 @@
 certs/*
 !certs/README.md
 include/config.h
+*.pem

@@ -17,19 +17,47 @@ unsigned long lastHeartbeat = 0;
 bool firstConnection = true;
 
 // ------------------------------
-// GPIO
+// GPIO Control
 // ------------------------------
+
+#ifdef USE_FLOATING_INPUT
+// Door Lock Mode: Sets pin to output LOW
+void setPinON(uint8_t pin) {
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, LOW);
+  Serial.printf("GPIO %d: OFF (OUTPUT LOW)\n", pin);
+}
+// Pin to input mode. Floating reaches 4.4V allowing relay to activate.
+void setPinOFF(uint8_t pin) {
+  pinMode(pin, INPUT);
+  Serial.printf("GPIO %d: ON (floating/Hi-Z)\n", pin);
+}
+
+#else
+// Power Button Mode: Uses OUTPUT HIGH/LOW
+void setPinON(uint8_t pin) {
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, HIGH);
+  Serial.printf("GPIO %d: PRESSED (HIGH)\n", pin);
+}
+
+void setPinOFF(uint8_t pin) {
+  pinMode(pin, OUTPUT);
+  digitalWrite(pin, LOW);
+  Serial.printf("GPIO %d: RELEASED (LOW)\n", pin);
+}
+#endif
+
 void setupGPIO() {
-  pinMode(POWER_BUTTON_GPIO, OUTPUT);
-  digitalWrite(POWER_BUTTON_GPIO, LOW);
+  setPinOFF(CONTROL_GPIO);
   Serial.println("GPIO initialized");
 }
 
 void togglePowerButton(uint32_t duration) {
   Serial.printf("Toggling power button for %lu ms\n", duration);
-  digitalWrite(POWER_BUTTON_GPIO, HIGH);
+  setPinON(CONTROL_GPIO);
   delay(duration);
-  digitalWrite(POWER_BUTTON_GPIO, LOW);
+  setPinOFF(CONTROL_GPIO);
   Serial.println("Power button toggle complete");
 }
 
@@ -77,18 +105,18 @@ void handleCommand(const char *payload, unsigned int length) {
   }
 
   const char *cmd = doc["cmd"];
-  uint32_t duration = doc["duration"] | 200;
+  uint32_t duration = doc["duration"] | DEFAULT_PULSE_MS;
 
   if (cmd && (strcmp(cmd, "pulse") == 0 || strcmp(cmd, "quick") == 0)) {
-    togglePowerButton(duration);
     publishAck("{\"status\":\"executed\"}");
+    togglePowerButton(duration);
   }
   else if (cmd && strcmp(cmd, "press") == 0) {
-    digitalWrite(POWER_BUTTON_GPIO, HIGH);
+    setPinON(CONTROL_GPIO);  // Activate (HIGH for power button, INPUT for door lock)
     publishAck("{\"status\":\"pressed\"}");
   }
   else if (cmd && strcmp(cmd, "release") == 0) {
-    digitalWrite(POWER_BUTTON_GPIO, LOW);
+    setPinOFF(CONTROL_GPIO);  // Deactivate (LOW for both modes)
     publishAck("{\"status\":\"released\"}");
   }
   else {
@@ -145,7 +173,7 @@ void setupMQTT() {
   mqttClient.setServer(AWS_IOT_ENDPOINT, AWS_IOT_PORT);
   mqttClient.setKeepAlive(30);
   mqttClient.setCallback(mqttCallback);
-  mqttClient.setBufferSize(512);
+  mqttClient.setBufferSize(256);
 
   connectMQTT();
 }
